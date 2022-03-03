@@ -1,0 +1,63 @@
+steps:
+  - name: gcr.io/cloud-builders/git
+    args:
+      - '-c'
+      - |
+        env | sort
+        echo TRIGGER_NAME = $TRIGGER_NAME
+        echo BUILD_ID = $BUILD_ID
+        echo PROJECT_NAME = $_PROJECT_NAME
+        echo PROJECT_ID = $PROJECT_ID
+        echo BRANCH = $_BRANCH
+        echo SHORT_SHA = $_SHORT_SHA
+    entrypoint: bash
+  - name: gcr.io/cloud-builders/git
+    args:
+      - '-c'
+      - |
+        echo "$$SSHKEY" > /root/.ssh/id_rsa
+        chmod 400 /root/.ssh/id_rsa
+        ssh-keyscan ${your gitlab url} > /root/.ssh/known_hosts
+    entrypoint: bash
+    secretEnv:
+      - SSHKEY
+    volumes:
+      - name: ssh
+        path: /root/.ssh
+  - name: gcr.io/cloud-builders/git
+    args:
+      - clone
+      - 'ssh://git@${your gitlab url}/$TRIGGER_NAME.git'
+      - '--branch'
+      - $_BRANCH
+    volumes:
+      - name: ssh
+        path: /root/.ssh
+  - name: gcr.io/cloud-builders/git
+    args:
+      - '-c'
+      - |
+        ls -al $TRIGGER_NAME/
+    entrypoint: bash
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/$TRIGGER_NAME:$_SHORT_SHA'
+      - .
+    dir: $TRIGGER_NAME
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - 'gcr.io/$PROJECT_ID/$TRIGGER_NAME:$_SHORT_SHA'
+images:
+  - 'gcr.io/$PROJECT_ID/$TRIGGER_NAME:$_SHORT_SHA'
+logsBucket: 'gs://${your cloud storage bucket}'
+availableSecrets:
+  secretManager:
+    - versionName: projects/${projectid}/secrets/${secrets-name}/versions/1
+      env: SSHKEY
+# 如果要使用vpc內的 cloud build ，需要建立 cloudbuild-pool
+# options:
+#   pool:
+#     name: projects/${your-projectname}/locations/${zone}/workerPools/${your-cloudbuild-pool}
